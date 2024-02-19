@@ -30,11 +30,14 @@ func main() {
 	// all conditions. Adjust this parameter based on the specific requirements.
 	conditionFilter := "" // Example: "New", "Pre-Owned", or "" for all items.
 
+	// Choose whether to enable pagination.
+	enablePagination := false // Set to false to crawl only the first page.
+
 	// Initiates the crawling process. The Crawl method visits the specified eBay page,
 	// extracts details of each listed item, and saves the information as JSON files
 	// in the specified data folder. It can filter items based on the condition if specified.
 	fmt.Println("Starting the crawling process...")
-	err := ebayCrawler.Crawl(conditionFilter)
+	err := ebayCrawler.Crawl(conditionFilter, enablePagination)
 	if err != nil {
 		fmt.Printf("Error during crawling: %v\n", err)
 		os.Exit(1)

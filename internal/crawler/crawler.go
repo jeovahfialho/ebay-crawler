@@ -30,10 +30,20 @@ func NewCrawler(baseURL, dataFolder string) *Crawler {
 	}
 }
 
+// Crawl initiates the crawling process, extracting and storing product data.
+// Now includes an option to enable or disable pagination.
+func (c *Crawler) Crawl(conditionFilter string, enablePagination bool) error {
+	if enablePagination {
+		return c.crawlWithPagination(conditionFilter)
+	} else {
+		return c.crawlSinglePage(conditionFilter)
+	}
+}
+
 // Crawl initiates the crawling process on the eBay page specified by BaseURL.
 // It extracts item details and stores them as JSON files in the DataFolder.
 // The function can filter items by a specified condition if provided.
-func (c *Crawler) Crawl(conditionFilter string) error {
+func (c *Crawler) crawlSinglePage(conditionFilter string) error {
 	// Attempt to fetch the page content from the BaseURL.
 	resp, err := c.Client.Get(c.BaseURL)
 	if err != nil {
@@ -75,6 +85,60 @@ func (c *Crawler) Crawl(conditionFilter string) error {
 		}(product)
 	}
 	wg.Wait()
+
+	return nil
+}
+
+// crawlWithPagination handles the crawling process with pagination support.
+func (c *Crawler) crawlWithPagination(conditionFilter string) error {
+	currentPage := 1
+	maxPages := 5 // Define a max pages to prevent infinite loops
+
+	for {
+		// Update the URL with the current page number
+		pageURL := fmt.Sprintf("%s&_pgn=%d", c.BaseURL, currentPage)
+		fmt.Println(pageURL)
+		resp, err := c.Client.Get(pageURL)
+		if err != nil {
+			return fmt.Errorf("failed to get page: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("received non-200 response code: %d", resp.StatusCode)
+		}
+
+		doc, err := goquery.NewDocumentFromReader(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to parse page: %v", err)
+		}
+
+		products, err := parser.ExtractProductInfo(doc)
+		if err != nil {
+			return fmt.Errorf("failed to extract product info: %v", err)
+		}
+
+		if conditionFilter != "" {
+			products = filterProductsByCondition(products, conditionFilter)
+		}
+
+		var wg sync.WaitGroup
+		for _, product := range products {
+			wg.Add(1)
+			go func(p model.Product) {
+				defer wg.Done()
+				if err := writer.WriteProductToFile(p, c.DataFolder); err != nil {
+					fmt.Printf("Failed to write product data to file: %v\n", err)
+				}
+			}(product)
+		}
+		wg.Wait()
+
+		currentPage++
+		if currentPage > maxPages {
+			break // Exit loop if max pages reached
+		}
+	}
 
 	return nil
 }
